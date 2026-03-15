@@ -44,7 +44,7 @@ on:
 jobs:
   council:
     name: Convene the Council
-    uses: sylvainsf/rivendell_council/.github/workflows/council.yml@main
+    uses: sylvainsf/rivendell_council/.github/workflows/council.yml@v2
     permissions:
       contents: read
       pull-requests: write
@@ -56,6 +56,9 @@ jobs:
 
 That's it. No API keys, no secrets, no submodules. The next pull request you open will
 automatically receive a full council review with all members reviewing in parallel.
+
+> **Tip:** We recommend pinning to a specific release tag (e.g. `@v2`) rather than `@main`
+> to avoid unexpected changes. See [Pinning a Version](#pinning-a-version) below.
 
 The council is fully configurable — enable/disable members, adjust weights, change models,
 or add custom reviewers — via a `council.md` file. See [Configuration](#configuration) below.
@@ -150,7 +153,7 @@ create your own `council.md` in your repository and pass its path:
 ```yaml
 jobs:
   council:
-    uses: sylvainsf/rivendell_council/.github/workflows/council.yml@main
+    uses: sylvainsf/rivendell_council/.github/workflows/council.yml@v2
     permissions:
       contents: read
       pull-requests: write
@@ -273,6 +276,30 @@ GitHub Models provides free rate-limited usage with every GitHub account. Limits
 model tier and your Copilot plan. For most projects this is more than sufficient. Enterprises
 can opt into paid usage for higher limits — see the
 [GitHub Models documentation](https://docs.github.com/en/github-models) for details.
+
+- A GitHub token with `pull-requests: write` and `models: read` permissions (the default
+  `GITHUB_TOKEN` works — just declare the permissions in your workflow).
+- **No external API keys needed.** LLM inference is handled by
+  [GitHub Models](https://github.com/marketplace/models) through `actions/ai-inference`.
+
+## Pinning a Version
+
+We recommend pinning to a **specific release tag** rather than `@main` so that workflow
+behaviour doesn't change unexpectedly when the action is updated.
+
+```yaml
+# Recommended: pin to a major version tag — receives backward-compatible updates
+uses: sylvainsf/rivendell_council/.github/workflows/council.yml@v2
+
+# Pin to an exact release for maximum reproducibility
+uses: sylvainsf/rivendell_council/.github/workflows/council.yml@v2.0.0
+
+# Pin to a specific commit SHA
+uses: sylvainsf/rivendell_council/.github/workflows/council.yml@e36f694
+```
+
+Check the [Releases](https://github.com/sylvainsf/rivendell_council/releases) page for
+available versions.
 
 ---
 
