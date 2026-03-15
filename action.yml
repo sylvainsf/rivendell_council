@@ -17,12 +17,17 @@ inputs:
     description: 'GitHub token with models:read and pull-requests:write permissions.'
     required: true
     default: ${{ github.token }}
+  council-config:
+    description: >
+      Path to a council.md configuration file. If not set, the bundled default is used.
+    required: false
+    default: ''
   model:
     description: >
       GitHub Models model identifier (e.g. openai/gpt-4o, anthropic/claude-sonnet-4.6,
-      openai/gpt-5.4). Defaults to openai/gpt-4o.
+      openai/gpt-5.4). If set, overrides the model in council.md.
     required: false
-    default: 'openai/gpt-4o'
+    default: ''
   max-diff-chars:
     description: 'Maximum number of characters from the PR diff to send to each reviewer.'
     required: false
@@ -39,6 +44,32 @@ outputs:
 runs:
   using: 'composite'
   steps:
+    # ── Parse config ─────────────────────────────────────────────────────
+    - name: Parse council config
+      id: config
+      shell: bash
+      run: |
+        CONFIG="${{ inputs.council-config }}"
+        if [ -n "$CONFIG" ] && [ -f "$CONFIG" ]; then
+          echo "Using custom config: $CONFIG"
+          bash "${{ github.action_path }}/scripts/parse-config.sh" "$CONFIG"
+        else
+          echo "Using bundled default config"
+          bash "${{ github.action_path }}/scripts/parse-config.sh" "${{ github.action_path }}/council.md"
+        fi
+
+    - name: Resolve model
+      id: resolve-model
+      shell: bash
+      run: |
+        INPUT_MODEL="${{ inputs.model }}"
+        CONFIG_MODEL="${{ steps.config.outputs.model }}"
+        if [ -n "$INPUT_MODEL" ]; then
+          echo "model=$INPUT_MODEL" >> "$GITHUB_OUTPUT"
+        else
+          echo "model=$CONFIG_MODEL" >> "$GITHUB_OUTPUT"
+        fi
+
     # ── Fetch PR diff ────────────────────────────────────────────────────
     - name: Fetch PR diff
       id: diff
@@ -53,27 +84,71 @@ runs:
           | head -c "${{ inputs.max-diff-chars }}" > "$RUNNER_TEMP/diff.patch"
         echo "🧙 Fetched diff for PR #$PR_NUMBER ($(wc -c < "$RUNNER_TEMP/diff.patch" | tr -d ' ') bytes)"
 
-    # ── Elrond ───────────────────────────────────────────────────────────
-    - name: "🌟 Elrond – Correctness"
+    # ── Review each enabled member sequentially ──────────────────────────
+    - name: Run council reviews
       shell: bash
+      env:
+        MEMBERS: ${{ steps.config.outputs.members }}
+        WEIGHTS: ${{ steps.config.outputs.weights }}
+        MODEL: ${{ steps.resolve-model.outputs.model }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
-        {
-          cat "${{ github.action_path }}/council/Elrond.md"
-          printf '\n\n---\n\nReview the following pull request diff. '
-          printf 'Respond with a JSON object containing: '
-          printf '"score" (integer 1-10), "summary" (string), '
-          printf '"concerns" (array of strings), "suggestions" (array of strings). '
-          printf 'Respond with valid JSON only — no markdown fences, no commentary.\n\n'
-          cat "$RUNNER_TEMP/diff.patch"
-        } > "$RUNNER_TEMP/prompt-elrond.txt"
+        echo "🧙 The Rivendell Council is assembling…"
+        echo "$MEMBERS" | jq -r '.[]' | while IFS= read -r member; do
+          member_lower=$(echo "$member" | tr '[:upper:]' '[:lower:]')
+          mkdir -p "$RUNNER_TEMP/reviews/$member_lower"
 
+          PROMPT_FILE="$ACTION_PATH/council/${member}.md"
+          if [ ! -f "$PROMPT_FILE" ]; then
+            echo "  ⚠️  No prompt file for $member — skipping"
+            continue
+          fi
+
+          # Build prompt file
+          {
+            cat "$PROMPT_FILE"
+            printf '\n\n---\n\nReview the following pull request diff. '
+            printf 'Respond with a JSON object containing: '
+            printf '"score" (integer 1-10), "summary" (string), '
+            printf '"concerns" (array of strings), "suggestions" (array of strings). '
+            printf 'Respond with valid JSON only — no markdown fences, no commentary.\n\n'
+            cat "$RUNNER_TEMP/diff.patch"
+          } > "$RUNNER_TEMP/prompt-${member_lower}.txt"
+
+          echo "  📜 $member prompt ready"
+        done
+
+    # Run inference for each member — we use a loop of ai-inference calls.
+    # Unfortunately composite actions can't loop over steps, so we use the
+    # config to determine which members to call and invoke them all.
+    # For true parallel execution, use the reusable workflow instead.
+
+    - name: Identify members
+      id: members
+      shell: bash
+      env:
+        MEMBERS: ${{ steps.config.outputs.members }}
+      run: |
+        # Export individual member flags for conditional steps
+        for m in Elrond Gimli Aragorn Legolas Bilbo; do
+          m_lower=$(echo "$m" | tr '[:upper:]' '[:lower:]')
+          if echo "$MEMBERS" | jq -e --arg n "$m" 'index($n) != null' > /dev/null 2>&1; then
+            echo "${m_lower}=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "${m_lower}=false" >> "$GITHUB_OUTPUT"
+          fi
+        done
+
+    # ── Elrond ───────────────────────────────────────────────────────────
     - uses: actions/ai-inference@v1
+      if: ${{ steps.members.outputs.elrond == 'true' }}
       id: elrond
       with:
-        model: ${{ inputs.model }}
+        model: ${{ steps.resolve-model.outputs.model }}
         prompt-file: ${{ runner.temp }}/prompt-elrond.txt
 
     - name: Save Elrond review
+      if: ${{ steps.members.outputs.elrond == 'true' }}
       shell: bash
       env:
         REVIEW: ${{ steps.elrond.outputs.response }}
@@ -87,26 +162,15 @@ runs:
         fi
 
     # ── Gimli ────────────────────────────────────────────────────────────
-    - name: "⚔️ Gimli – Strength"
-      shell: bash
-      run: |
-        {
-          cat "${{ github.action_path }}/council/Gimli.md"
-          printf '\n\n---\n\nReview the following pull request diff. '
-          printf 'Respond with a JSON object containing: '
-          printf '"score" (integer 1-10), "summary" (string), '
-          printf '"concerns" (array of strings), "suggestions" (array of strings). '
-          printf 'Respond with valid JSON only — no markdown fences, no commentary.\n\n'
-          cat "$RUNNER_TEMP/diff.patch"
-        } > "$RUNNER_TEMP/prompt-gimli.txt"
-
     - uses: actions/ai-inference@v1
+      if: ${{ steps.members.outputs.gimli == 'true' }}
       id: gimli
       with:
-        model: ${{ inputs.model }}
+        model: ${{ steps.resolve-model.outputs.model }}
         prompt-file: ${{ runner.temp }}/prompt-gimli.txt
 
     - name: Save Gimli review
+      if: ${{ steps.members.outputs.gimli == 'true' }}
       shell: bash
       env:
         REVIEW: ${{ steps.gimli.outputs.response }}
@@ -120,26 +184,15 @@ runs:
         fi
 
     # ── Aragorn ──────────────────────────────────────────────────────────
-    - name: "👑 Aragorn – Maintainability"
-      shell: bash
-      run: |
-        {
-          cat "${{ github.action_path }}/council/Aragorn.md"
-          printf '\n\n---\n\nReview the following pull request diff. '
-          printf 'Respond with a JSON object containing: '
-          printf '"score" (integer 1-10), "summary" (string), '
-          printf '"concerns" (array of strings), "suggestions" (array of strings). '
-          printf 'Respond with valid JSON only — no markdown fences, no commentary.\n\n'
-          cat "$RUNNER_TEMP/diff.patch"
-        } > "$RUNNER_TEMP/prompt-aragorn.txt"
-
     - uses: actions/ai-inference@v1
+      if: ${{ steps.members.outputs.aragorn == 'true' }}
       id: aragorn
       with:
-        model: ${{ inputs.model }}
+        model: ${{ steps.resolve-model.outputs.model }}
         prompt-file: ${{ runner.temp }}/prompt-aragorn.txt
 
     - name: Save Aragorn review
+      if: ${{ steps.members.outputs.aragorn == 'true' }}
       shell: bash
       env:
         REVIEW: ${{ steps.aragorn.outputs.response }}
@@ -153,26 +206,15 @@ runs:
         fi
 
     # ── Legolas ──────────────────────────────────────────────────────────
-    - name: "🏹 Legolas – Performance"
-      shell: bash
-      run: |
-        {
-          cat "${{ github.action_path }}/council/Legolas.md"
-          printf '\n\n---\n\nReview the following pull request diff. '
-          printf 'Respond with a JSON object containing: '
-          printf '"score" (integer 1-10), "summary" (string), '
-          printf '"concerns" (array of strings), "suggestions" (array of strings). '
-          printf 'Respond with valid JSON only — no markdown fences, no commentary.\n\n'
-          cat "$RUNNER_TEMP/diff.patch"
-        } > "$RUNNER_TEMP/prompt-legolas.txt"
-
     - uses: actions/ai-inference@v1
+      if: ${{ steps.members.outputs.legolas == 'true' }}
       id: legolas
       with:
-        model: ${{ inputs.model }}
+        model: ${{ steps.resolve-model.outputs.model }}
         prompt-file: ${{ runner.temp }}/prompt-legolas.txt
 
     - name: Save Legolas review
+      if: ${{ steps.members.outputs.legolas == 'true' }}
       shell: bash
       env:
         REVIEW: ${{ steps.legolas.outputs.response }}
@@ -185,19 +227,45 @@ runs:
             > "$RUNNER_TEMP/reviews/legolas/review.json"
         fi
 
-    # ── Gandalf ──────────────────────────────────────────────────────────
-    - name: "🧙 Build Gandalf prompt"
+    # ── Bilbo ────────────────────────────────────────────────────────────
+    - uses: actions/ai-inference@v1
+      if: ${{ steps.members.outputs.bilbo == 'true' }}
+      id: bilbo
+      with:
+        model: ${{ steps.resolve-model.outputs.model }}
+        prompt-file: ${{ runner.temp }}/prompt-bilbo.txt
+
+    - name: Save Bilbo review
+      if: ${{ steps.members.outputs.bilbo == 'true' }}
       shell: bash
+      env:
+        REVIEW: ${{ steps.bilbo.outputs.response }}
+      run: |
+        mkdir -p "$RUNNER_TEMP/reviews/bilbo"
+        if printf '%s' "$REVIEW" | jq . > "$RUNNER_TEMP/reviews/bilbo/review.json" 2>/dev/null; then
+          echo "  🍃 Bilbo review parsed"
+        else
+          jq -n --arg raw "$REVIEW" '{"score":5,"summary":"Parse error","concerns":[],"suggestions":[],"raw_response":$raw}' \
+            > "$RUNNER_TEMP/reviews/bilbo/review.json"
+        fi
+
+    # ── Gandalf ──────────────────────────────────────────────────────────
+    - name: Build Gandalf prompt
+      shell: bash
+      env:
+        WEIGHTS: ${{ steps.config.outputs.weights }}
       run: |
         {
           cat "${{ github.action_path }}/council/Gandalf.md"
           printf '\n\n---\n\nHere is the pull request diff under review:\n\n'
           cat "$RUNNER_TEMP/diff.patch"
-          printf '\n\n---\n\nHere are the council members'"'"' reviews:\n\n'
+          printf '\n\n---\n\nHere are the council members'"'"' reviews (with weights):\n\n'
           for dir in "$RUNNER_TEMP"/reviews/*/; do
             [ -d "$dir" ] || continue
             member=$(basename "$dir")
-            echo "### $member"
+            [ -f "$dir/review.json" ] || continue
+            weight=$(echo "$WEIGHTS" | jq -r --arg m "$member" '.[$m] // 1.0' 2>/dev/null || echo "1.0")
+            echo "### $member (weight: $weight)"
             cat "$dir/review.json"
             echo ""
           done
@@ -208,12 +276,14 @@ runs:
         } > "$RUNNER_TEMP/gandalf-prompt.txt"
 
     - uses: actions/ai-inference@v1
+      if: ${{ steps.config.outputs.gandalf == 'true' }}
       id: gandalf
       with:
-        model: ${{ inputs.model }}
+        model: ${{ steps.resolve-model.outputs.model }}
         prompt-file: ${{ runner.temp }}/gandalf-prompt.txt
 
-    - name: Save verdict
+    - name: Save AI verdict
+      if: ${{ steps.config.outputs.gandalf == 'true' }}
       shell: bash
       env:
         VERDICT: ${{ steps.gandalf.outputs.response }}
@@ -226,15 +296,49 @@ runs:
             > "$RUNNER_TEMP/verdict.json"
         fi
 
+    - name: Compute weighted-average verdict (no Gandalf)
+      if: ${{ steps.config.outputs.gandalf != 'true' }}
+      shell: bash
+      env:
+        WEIGHTS: ${{ steps.config.outputs.weights }}
+        THRESHOLD: ${{ steps.config.outputs.threshold }}
+      run: |
+        result=$(python3 -c "
+        import json, glob
+        weights = json.loads('$WEIGHTS')
+        total_w = 0.0
+        weighted_sum = 0.0
+        for f in sorted(glob.glob('$RUNNER_TEMP/reviews/*/review.json')):
+            member = f.split('/')[-2]
+            with open(f) as fh:
+                r = json.load(fh)
+            w = weights.get(member, 1.0)
+            s = float(r.get('score', 5))
+            weighted_sum += s * w
+            total_w += w
+        avg = weighted_sum / total_w if total_w else 5.0
+        threshold = float('$THRESHOLD')
+        verdict = 'PASS' if avg >= threshold else 'FAIL'
+        obj = {
+            'verdict': verdict,
+            'summary': f'Weighted-average score: {avg:.1f}/10 (threshold: {threshold}).',
+            'reasoning': 'Gandalf was absent; the decision was made by weighted average.',
+            'feedback': '' if verdict == 'PASS' else 'Please address the council concerns.'
+        }
+        print(json.dumps(obj))
+        ")
+        echo "$result" > "$RUNNER_TEMP/verdict.json"
+
     # ── Post comment ─────────────────────────────────────────────────────
     - name: Format and post review comment
       id: post
       shell: bash
       env:
         GH_TOKEN: ${{ inputs.github-token }}
+        WEIGHTS: ${{ steps.config.outputs.weights }}
       run: |
         bash "${{ github.action_path }}/scripts/format-comment.sh" \
-          "$RUNNER_TEMP/reviews" "$RUNNER_TEMP/verdict.json" > "$RUNNER_TEMP/comment.md"
+          "$RUNNER_TEMP/reviews" "$RUNNER_TEMP/verdict.json" "$WEIGHTS" > "$RUNNER_TEMP/comment.md"
 
         PR_NUMBER="${{ steps.diff.outputs.pr-number }}"
         VERDICT=$(jq -r '.verdict // "FAIL"' "$RUNNER_TEMP/verdict.json" | tr '[:lower:]' '[:upper:]')

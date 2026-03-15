@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # format-comment.sh — Format Rivendell Council reviews into a PR comment.
 #
-# Usage: format-comment.sh <reviews_dir> <verdict_file>
-#   reviews_dir:  directory containing {member}/review.json files
-#   verdict_file: path to Gandalf's verdict JSON
+# Usage: format-comment.sh <reviews_dir> <verdict_file> [weights_json]
+#   reviews_dir:   directory containing {member}/review.json files
+#   verdict_file:  path to Gandalf's verdict JSON
+#   weights_json:  optional JSON object mapping member → weight (e.g. '{"Elrond":1.0}')
 #
 # Outputs the formatted Markdown comment to stdout.
 
 set -euo pipefail
 
-REVIEWS_DIR="${1:?Usage: format-comment.sh <reviews_dir> <verdict_file>}"
-VERDICT_FILE="${2:?Usage: format-comment.sh <reviews_dir> <verdict_file>}"
+REVIEWS_DIR="${1:?Usage: format-comment.sh <reviews_dir> <verdict_file> [weights_json]}"
+VERDICT_FILE="${2:?Usage: format-comment.sh <reviews_dir> <verdict_file> [weights_json]}"
+WEIGHTS_JSON="${3:-{}}"
 
 # Member display metadata
 member_emoji() {
@@ -53,7 +55,13 @@ for review_file in "$REVIEWS_DIR"/*/review.json; do
   score=$(jq -r '.score // "N/A"' "$review_file" 2>/dev/null || echo "N/A")
   summary=$(jq -r '.summary // empty' "$review_file" 2>/dev/null || true)
 
-  echo "### $emoji $title  ·  Score: $score/10"
+  # Look up weight from the weights JSON (case-insensitive match on member name)
+  weight=$(echo "$WEIGHTS_JSON" | jq -r --arg m "$member" '
+    to_entries[] | select(.key | ascii_downcase == ($m | ascii_downcase)) | .value
+  ' 2>/dev/null || true)
+  weight="${weight:-1.0}"
+
+  echo "### $emoji $title  ·  Score: $score/10  ·  Weight: $weight"
   echo ""
   [ -n "$summary" ] && echo "$summary" && echo ""
 

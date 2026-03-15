@@ -51,10 +51,14 @@ jobs:
       models: read
     with:
       model: openai/gpt-4o
+      # council-config: .github/council.md  # optional custom config
 ```
 
 That's it. No API keys, no secrets, no submodules. The next pull request you open will
 automatically receive a full council review with all members reviewing in parallel.
+
+The council is fully configurable — enable/disable members, adjust weights, change models,
+or add custom reviewers — via a `council.md` file. See [Configuration](#configuration) below.
 
 ### Model options
 
@@ -76,14 +80,16 @@ Pull Request opened / updated
         │
         ▼
 ┌───────────────────────────────────────────┐
-│  Fetch PR diff (prepare job)              │
+│  prepare job:                             │
+│  • Parse council.md (members, weights)    │
+│  • Fetch PR diff                          │
 └───────────────────┬───────────────────────┘
                     │
         ┌───────────┼───────────────────┐
         ▼           ▼                   ▼           ▼
   🌟 Elrond    ⚔️ Gimli           👑 Aragorn   🏹 Legolas
-  (parallel)   (parallel)        (parallel)   (parallel)
-  ai-inference ai-inference      ai-inference ai-inference
+  (parallel     (parallel         (parallel     (parallel
+   matrix)       matrix)           matrix)       matrix)
         └───────────┬───────────────────┘
                     ▼
               🧙 Gandalf
@@ -97,9 +103,10 @@ Pull Request opened / updated
    exit 0)               exit 1)
 ```
 
-1. The **prepare** job fetches the unified diff of the pull request.
-2. Each council member job runs **in parallel** — each receives the diff and its
-   role-specific prompt via `actions/ai-inference`. They respond with a JSON object
+1. The **prepare** job parses `council.md` to determine which members are enabled, their
+   weights, and the model to use. It also fetches the unified diff of the pull request.
+2. Each enabled council member runs as a **parallel matrix job** — each receives the diff
+   and its role-specific prompt via `actions/ai-inference`. They respond with a JSON object
    containing a `score` (1–10), `summary`, `concerns`, and `suggestions`.
 3. **Gandalf** receives the diff **and** all member reviews. He synthesises the findings
    and responds with a `verdict` (`PASS` or `FAIL`), `summary`, `reasoning`, and `feedback`.
@@ -115,7 +122,8 @@ Pull Request opened / updated
 
 | Input | Required | Default | Description |
 |-------|----------|---------|-------------|
-| `model` | ❌ | `openai/gpt-4o` | GitHub Models model identifier |
+| `model` | ❌ | from config | GitHub Models model identifier (overrides `council.md`) |
+| `council-config` | ❌ | bundled default | Path to a `council.md` in your repo |
 | `max-diff-chars` | ❌ | `30000` | Max characters of the diff sent to each reviewer |
 
 ### Workflow outputs
@@ -133,6 +141,61 @@ permissions:
   pull-requests: write  # post the review comment
   models: read          # call GitHub Models via actions/ai-inference
 ```
+
+### `council.md` configuration
+
+The bundled [`council.md`](council.md) provides sensible defaults. To customise the council,
+create your own `council.md` in your repository and pass its path:
+
+```yaml
+jobs:
+  council:
+    uses: sylvainsf/rivendell_council/.github/workflows/council.yml@main
+    permissions:
+      contents: read
+      pull-requests: write
+      models: read
+    with:
+      council-config: .github/council.md
+```
+
+#### Configuration reference
+
+```yaml
+members:
+  Gandalf:
+    enabled: true
+    weight: 1.0
+
+  Elrond:
+    enabled: true
+    weight: 1.0
+
+  Gimli:
+    enabled: true
+    weight: 2.0     # double Gimli's influence (great for security-critical projects)
+
+  Aragorn:
+    enabled: true
+    weight: 1.0
+
+  Legolas:
+    enabled: false   # opt out of performance reviews
+
+  Bilbo:
+    enabled: true
+    weight: 0.5      # half-weight — style is advisory, not a blocker
+
+passing_threshold: 6.0           # minimum weighted-average score when Gandalf is disabled
+model: openai/gpt-4o             # GitHub Models identifier
+```
+
+| Field | Description |
+|-------|-------------|
+| `members.<Name>.enabled` | `true` to include the member, `false` to skip them |
+| `members.<Name>.weight` | Score multiplier (default `1.0`; `2.0` doubles influence; `0.5` halves it) |
+| `passing_threshold` | Minimum weighted-average score (1–10) used only when Gandalf is disabled |
+| `model` | Default model for all reviews (can be overridden by the `model` workflow input) |
 
 ---
 
@@ -173,6 +236,7 @@ jobs:
         uses: ./.github/rivendell_council
         with:
           model: openai/gpt-4o
+          # council-config: .github/council.md  # optional custom config
 ```
 
 This uses the same `actions/ai-inference` calls but runs each council member one after

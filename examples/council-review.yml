@@ -14,6 +14,7 @@ jobs:
       models: read          # call GitHub Models (via actions/ai-inference)
     with:
       model: openai/gpt-4o
+      # council-config: .github/council.md  # optional custom config
       # Other model options:
       #   anthropic/claude-sonnet-4.6
       #   openai/gpt-5.4
