@@ -27,32 +27,14 @@ whether the PR may be merged.
 
 ## Quick Start
 
-### 1. Add Rivendell Council as a submodule
-
-From the root of your repository:
-
-```bash
-git submodule add https://github.com/sylvainsf/rivendell_council.git .github/rivendell_council
-git submodule update --init --recursive
-git commit -m "Add Rivendell Council as submodule"
-```
-
-### 2. Add your OpenAI API key as a GitHub secret
+### 1. Add your OpenAI API key as a GitHub secret
 
 In your repository go to **Settings → Secrets and variables → Actions** and create a new secret
 named `OPENAI_API_KEY` with your [OpenAI API key](https://platform.openai.com/api-keys).
 
-### 3. Create the workflow file
+### 2. Create the workflow file
 
-Copy the example workflow into your repository:
-
-```bash
-cp .github/rivendell_council/examples/council-review.yml .github/workflows/council-review.yml
-git add .github/workflows/council-review.yml
-git commit -m "Add Rivendell Council workflow"
-```
-
-Or create `.github/workflows/council-review.yml` manually:
+Create `.github/workflows/council-review.yml` in your repository:
 
 ```yaml
 name: Rivendell Council Review
@@ -70,13 +52,11 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout code (with submodules)
+      - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
       - name: Convene Rivendell Council
-        uses: ./.github/rivendell_council
+        uses: sylvainsf/rivendell_council@v1
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           github-token:   ${{ secrets.GITHUB_TOKEN }}
@@ -93,7 +73,7 @@ You can override it by creating your own `council.md` anywhere in your project a
 action at it:
 
 ```yaml
-- uses: ./.github/rivendell_council
+- uses: sylvainsf/rivendell_council@v1
   with:
     openai-api-key: ${{ secrets.OPENAI_API_KEY }}
     council-config: .github/council.md   # ← your custom config
@@ -218,9 +198,69 @@ enabled in the configuration.
 
 ---
 
-## Keeping the Submodule Up to Date
+## Requirements
 
-To pull the latest version of Rivendell Council:
+- An [OpenAI API key](https://platform.openai.com/api-keys) stored as the `OPENAI_API_KEY` secret.
+- A GitHub token with `pull-requests: write` permission (the default `GITHUB_TOKEN` works).
+
+---
+
+## Pinning a Version
+
+You can pin to a major version tag, a specific release tag, or a commit SHA:
+
+```yaml
+- uses: sylvainsf/rivendell_council@v1        # latest v1.x.x
+- uses: sylvainsf/rivendell_council@v1.0.0    # exact release
+- uses: sylvainsf/rivendell_council@abc1234   # specific commit
+```
+
+---
+
+## Using as a Git Submodule
+
+If you prefer to vendor the action or are running outside of GitHub Actions, you can add
+Rivendell Council as a git submodule instead of referencing it from the marketplace.
+
+### 1. Add the submodule
+
+```bash
+git submodule add https://github.com/sylvainsf/rivendell_council.git .github/rivendell_council
+git submodule update --init --recursive
+git commit -m "Add Rivendell Council as submodule"
+```
+
+### 2. Create the workflow file
+
+```yaml
+name: Rivendell Council Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  council:
+    name: Convene the Council
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: read
+
+    steps:
+      - name: Checkout code (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Convene Rivendell Council
+        uses: ./.github/rivendell_council
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          github-token:   ${{ secrets.GITHUB_TOKEN }}
+```
+
+### Keeping the submodule up to date
 
 ```bash
 git submodule update --remote .github/rivendell_council
@@ -237,14 +277,6 @@ cd ../..
 git add .github/rivendell_council
 git commit -m "Pin Rivendell Council to v1.0.0"
 ```
-
----
-
-## Requirements
-
-- An [OpenAI API key](https://platform.openai.com/api-keys) stored as the `OPENAI_API_KEY` secret.
-- A GitHub token with `pull-requests: write` permission (the default `GITHUB_TOKEN` works).
-- The workflow must check out the repository **with submodules** (`submodules: recursive`).
 
 ---
 
