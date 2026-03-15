@@ -1,0 +1,359 @@
+# Rivendell Council — Reusable Workflow
+#
+# Assembles a fellowship of AI code reviewers to evaluate a pull request.
+# Each council member reviews the diff in parallel using GitHub Models
+# (via actions/ai-inference). Gandalf synthesises all reviews and delivers
+# a PASS/FAIL verdict posted as a PR comment.
+#
+# Usage (in your repository's workflow):
+#
+#   jobs:
+#     council:
+#       uses: sylvainsf/rivendell_council/.github/workflows/council.yml@main
+#       permissions:
+#         contents: read
+#         pull-requests: write
+#         models: read
+#       with:
+#         model: openai/gpt-4o
+
+name: Rivendell Council
+
+on:
+  workflow_call:
+    inputs:
+      model:
+        description: >
+          GitHub Models model identifier. Examples: openai/gpt-4o,
+          anthropic/claude-sonnet-4.6, openai/gpt-5.4.
+          If set, overrides the model in council.md.
+        type: string
+        default: ''
+      council-config:
+        description: >
+          Path to a council.md configuration file in the caller's repository.
+          If not set, the bundled default council.md is used.
+        type: string
+        default: ''
+      max-diff-chars:
+        description: 'Maximum characters of the PR diff sent to each reviewer.'
+        type: number
+        default: 30000
+    outputs:
+      decision:
+        description: "Gandalf's final verdict: PASS or FAIL."
+        value: ${{ jobs.gandalf.outputs.decision }}
+      summary:
+        description: "A prose summary of the council's findings."
+        value: ${{ jobs.gandalf.outputs.summary }}
+
+# ---------------------------------------------------------------------------
+# Jobs
+# ---------------------------------------------------------------------------
+
+jobs:
+
+  # ── Parse config and fetch diff ──────────────────────────────────────────
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      pr-number: ${{ steps.diff.outputs.pr-number }}
+      members: ${{ steps.config.outputs.members }}
+      weights: ${{ steps.config.outputs.weights }}
+      model: ${{ steps.resolve-model.outputs.model }}
+      threshold: ${{ steps.config.outputs.threshold }}
+      gandalf: ${{ steps.config.outputs.gandalf }}
+    steps:
+      - name: Check out caller repo
+        uses: actions/checkout@v4
+        with:
+          path: caller
+
+      - name: Check out Rivendell Council
+        uses: actions/checkout@v4
+        with:
+          repository: sylvainsf/rivendell_council
+          path: .council
+
+      - name: Parse council config
+        id: config
+        run: |
+          if [ -n "${{ inputs.council-config }}" ] && [ -f "caller/${{ inputs.council-config }}" ]; then
+            echo "Using caller config: caller/${{ inputs.council-config }}"
+            bash .council/scripts/parse-config.sh "caller/${{ inputs.council-config }}"
+          else
+            echo "Using bundled default config"
+            bash .council/scripts/parse-config.sh .council/council.md
+          fi
+
+      - name: Resolve model
+        id: resolve-model
+        run: |
+          INPUT_MODEL="${{ inputs.model }}"
+          CONFIG_MODEL="${{ steps.config.outputs.model }}"
+          if [ -n "$INPUT_MODEL" ]; then
+            echo "model=$INPUT_MODEL" >> "$GITHUB_OUTPUT"
+            echo "Model override: $INPUT_MODEL"
+          else
+            echo "model=$CONFIG_MODEL" >> "$GITHUB_OUTPUT"
+            echo "Model from config: $CONFIG_MODEL"
+          fi
+
+      - name: Fetch PR diff
+        id: diff
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MAX_CHARS: ${{ inputs.max-diff-chars }}
+        run: |
+          PR_NUMBER="${{ github.event.pull_request.number }}"
+          echo "pr-number=$PR_NUMBER" >> "$GITHUB_OUTPUT"
+          gh api "repos/${{ github.repository }}/pulls/$PR_NUMBER" \
+            -H "Accept: application/vnd.github.v3.diff" \
+            | head -c "$MAX_CHARS" > diff.patch
+          SIZE=$(wc -c < diff.patch | tr -d ' ')
+          echo "Fetched diff for PR #$PR_NUMBER ($SIZE bytes)"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pr-diff
+          path: diff.patch
+          retention-days: 1
+
+  # ── Council member reviews (dynamic matrix, run in parallel) ─────────────
+  review:
+    name: "Review – ${{ matrix.member }}"
+    needs: prepare
+    runs-on: ubuntu-latest
+    permissions:
+      models: read
+    strategy:
+      fail-fast: false
+      matrix:
+        member: ${{ fromJson(needs.prepare.outputs.members) }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: sylvainsf/rivendell_council
+          path: .council
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: pr-diff
+
+      - name: Build prompt
+        run: |
+          MEMBER="${{ matrix.member }}"
+          PROMPT_FILE=".council/council/${MEMBER}.md"
+          if [ ! -f "$PROMPT_FILE" ]; then
+            echo "::error::No prompt file found for $MEMBER at $PROMPT_FILE"
+            exit 1
+          fi
+          {
+            cat "$PROMPT_FILE"
+            printf '\n\n---\n\nReview the following pull request diff. '
+            printf 'Respond with a JSON object containing: '
+            printf '"score" (integer 1-10), "summary" (string), '
+            printf '"concerns" (array of strings), "suggestions" (array of strings). '
+            printf 'Respond with valid JSON only — no markdown fences, no commentary.\n\n'
+            cat diff.patch
+          } > prompt.txt
+
+      - uses: actions/ai-inference@v1
+        id: review
+        with:
+          model: ${{ needs.prepare.outputs.model }}
+          prompt-file: prompt.txt
+
+      - name: Save review
+        env:
+          REVIEW: ${{ steps.review.outputs.response }}
+          MEMBER: ${{ matrix.member }}
+        run: |
+          member_lower=$(echo "$MEMBER" | tr '[:upper:]' '[:lower:]')
+          if printf '%s' "$REVIEW" | jq . > review.json 2>/dev/null; then
+            echo "$MEMBER review parsed"
+          else
+            echo "Raw response — wrapping in fallback JSON"
+            jq -n --arg raw "$REVIEW" \
+              '{"score":5,"summary":"Review could not be parsed as JSON.","concerns":[],"suggestions":[],"raw_response":$raw}' \
+              > review.json
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: review-${{ matrix.member }}
+          path: review.json
+          retention-days: 1
+
+  # ── Gandalf — synthesise and deliver verdict ─────────────────────────────
+  gandalf:
+    name: "🧙 Gandalf – Final Verdict"
+    needs: [prepare, review]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      models: read
+      pull-requests: write
+    outputs:
+      decision: ${{ steps.post.outputs.decision }}
+      summary: ${{ steps.post.outputs.summary }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: sylvainsf/rivendell_council
+          path: .council
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: pr-diff
+
+      # Download all review artifacts into reviews/{Member}/
+      - name: Download reviews
+        env:
+          MEMBERS: ${{ needs.prepare.outputs.members }}
+        run: |
+          mkdir -p reviews
+          echo "$MEMBERS" | jq -r '.[]' | while IFS= read -r member; do
+            mkdir -p "reviews/$member"
+          done
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: review-*
+          path: reviews-raw
+        continue-on-error: true
+
+      - name: Organise reviews
+        env:
+          MEMBERS: ${{ needs.prepare.outputs.members }}
+        run: |
+          # Move from reviews-raw/review-{Member}/review.json → reviews/{member}/review.json
+          echo "$MEMBERS" | jq -r '.[]' | while IFS= read -r member; do
+            member_lower=$(echo "$member" | tr '[:upper:]' '[:lower:]')
+            src="reviews-raw/review-${member}/review.json"
+            dst="reviews/${member_lower}/review.json"
+            mkdir -p "reviews/${member_lower}"
+            if [ -f "$src" ]; then
+              cp "$src" "$dst"
+              echo "  ✓ $member review found"
+            else
+              echo "  ✗ $member review missing — using fallback"
+              jq -n '{"score":5,"summary":"This member did not submit a review.","concerns":[],"suggestions":[]}' > "$dst"
+            fi
+          done
+
+      - name: Build Gandalf prompt
+        env:
+          WEIGHTS: ${{ needs.prepare.outputs.weights }}
+          GANDALF_ENABLED: ${{ needs.prepare.outputs.gandalf }}
+          THRESHOLD: ${{ needs.prepare.outputs.threshold }}
+        run: |
+          {
+            cat .council/council/Gandalf.md
+            printf '\n\n---\n\nHere is the pull request diff under review:\n\n'
+            cat diff.patch
+            printf '\n\n---\n\nHere are the council members'"'"' reviews (with weights):\n\n'
+            for dir in reviews/*/; do
+              [ -d "$dir" ] || continue
+              member=$(basename "$dir")
+              # Look up weight
+              weight=$(echo "$WEIGHTS" | jq -r --arg m "$member" '.[$m] // 1.0' 2>/dev/null || echo "1.0")
+              echo "### $member (weight: $weight)"
+              if [ -f "$dir/review.json" ]; then
+                cat "$dir/review.json"
+              else
+                echo '{"score": 5, "summary": "This member did not submit a review."}'
+              fi
+              echo ""
+            done
+            printf '\nDeliver your final verdict. Respond with a JSON object containing: '
+            printf '"verdict" ("PASS" or "FAIL"), "summary" (string), '
+            printf '"reasoning" (string), "feedback" (string). '
+            printf 'Respond with valid JSON only — no markdown fences, no commentary.\n'
+          } > gandalf-prompt.txt
+
+      - name: Gandalf verdict (AI)
+        id: verdict
+        if: ${{ needs.prepare.outputs.gandalf == 'true' }}
+        uses: actions/ai-inference@v1
+        with:
+          model: ${{ needs.prepare.outputs.model }}
+          prompt-file: gandalf-prompt.txt
+
+      - name: Save AI verdict
+        if: ${{ needs.prepare.outputs.gandalf == 'true' }}
+        env:
+          VERDICT: ${{ steps.verdict.outputs.response }}
+        run: |
+          if printf '%s' "$VERDICT" | jq . > verdict.json 2>/dev/null; then
+            echo "Gandalf verdict parsed"
+          else
+            jq -n --arg raw "$VERDICT" \
+              '{"verdict":"FAIL","summary":"Gandalf'"'"'s verdict could not be parsed.","reasoning":"Parse error","feedback":"Check the Actions logs.","raw_response":$raw}' \
+              > verdict.json
+          fi
+
+      - name: Compute weighted-average verdict (no Gandalf)
+        if: ${{ needs.prepare.outputs.gandalf != 'true' }}
+        env:
+          WEIGHTS: ${{ needs.prepare.outputs.weights }}
+          THRESHOLD: ${{ needs.prepare.outputs.threshold }}
+        run: |
+          # Calculate weighted average from review scores
+          result=$(python3 -c "
+          import json, glob, sys
+          weights = json.loads('$WEIGHTS')
+          total_w = 0.0
+          weighted_sum = 0.0
+          for f in sorted(glob.glob('reviews/*/review.json')):
+              member = f.split('/')[1]
+              with open(f) as fh:
+                  r = json.load(fh)
+              w = weights.get(member, 1.0)
+              s = float(r.get('score', 5))
+              weighted_sum += s * w
+              total_w += w
+          avg = weighted_sum / total_w if total_w else 5.0
+          threshold = float('$THRESHOLD')
+          verdict = 'PASS' if avg >= threshold else 'FAIL'
+          obj = {
+              'verdict': verdict,
+              'summary': f'Weighted-average score: {avg:.1f}/10 (threshold: {threshold}).',
+              'reasoning': 'Gandalf was absent; the decision was made by weighted average.',
+              'feedback': '' if verdict == 'PASS' else 'Please address the council concerns.'
+          }
+          print(json.dumps(obj))
+          ")
+          echo "$result" > verdict.json
+          echo "Weighted-average verdict computed"
+
+      - name: Format and post review comment
+        id: post
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ needs.prepare.outputs.pr-number }}
+          WEIGHTS: ${{ needs.prepare.outputs.weights }}
+        run: |
+          bash .council/scripts/format-comment.sh reviews verdict.json "$WEIGHTS" > comment.md
+
+          VERDICT=$(jq -r '.verdict // "FAIL"' verdict.json 2>/dev/null | tr '[:lower:]' '[:upper:]')
+          SUMMARY=$(jq -r '.summary // ""' verdict.json 2>/dev/null)
+
+          echo "decision=$VERDICT" >> "$GITHUB_OUTPUT"
+          {
+            echo 'summary<<RIVENDELL_EOF'
+            echo "$SUMMARY"
+            echo 'RIVENDELL_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+          gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
+            -F body=@comment.md
+          echo "✅ Review comment posted to PR #$PR_NUMBER"
+
+          if [ "$VERDICT" != "PASS" ]; then
+            echo "::error::You shall not pass! The council has rejected this PR."
+            exit 1
+          fi

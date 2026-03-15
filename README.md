@@ -277,7 +277,10 @@ model tier and your Copilot plan. For most projects this is more than sufficient
 can opt into paid usage for higher limits — see the
 [GitHub Models documentation](https://docs.github.com/en/github-models) for details.
 
----
+- A GitHub token with `pull-requests: write` and `models: read` permissions (the default
+  `GITHUB_TOKEN` works — just declare the permissions in your workflow).
+- **No external API keys needed.** LLM inference is handled by
+  [GitHub Models](https://github.com/marketplace/models) through `actions/ai-inference`.
 
 ## Pinning a Version
 

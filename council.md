@@ -8,7 +8,8 @@
 # `passing_threshold` is the minimum weighted-average score (out of 10) required to pass
 # when Gandalf is disabled. It is ignored when Gandalf is enabled (he makes the call).
 #
-# `model` sets the OpenAI model used for all council members.
+# `model` sets the GitHub Models model used for all council members.
+# See https://github.com/marketplace/models for available models.
 
 members:
   Gandalf:
@@ -42,7 +43,9 @@ members:
 
 passing_threshold: 6.0
 
-model: gpt-4o
+# GitHub Models identifier — any model from https://github.com/marketplace/models
+# Examples: openai/gpt-4o, anthropic/claude-sonnet-4.6, openai/gpt-5.4
+model: openai/gpt-4o
 ---
 
 # Rivendell Council
@@ -54,7 +57,7 @@ Adjust the YAML front matter above to configure how the council operates:
 | `members.<Name>.enabled` | `true` to include the member, `false` to skip them |
 | `members.<Name>.weight` | Multiplier for the member's score (default `1.0`) |
 | `passing_threshold` | Minimum weighted-average score (1–10) when Gandalf is disabled |
-| `model` | OpenAI model to use for all reviews (default `gpt-4o`) |
+| `model` | GitHub Models identifier (default `openai/gpt-4o`) |
 
 ## Roles
 
