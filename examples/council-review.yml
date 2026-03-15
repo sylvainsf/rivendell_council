@@ -16,7 +16,8 @@ jobs:
       model: openai/gpt-4o
       # council-config: .github/council.md  # optional custom config
       # Other model options:
-      #   anthropic/claude-sonnet-4.6
-      #   openai/gpt-5.4
+      #   openai/gpt-4.1       (latest GPT-4 series)
+      #   openai/gpt-5         (GPT-5)
       #   openai/gpt-4o-mini   (faster, cheaper)
+      #   xai/grok-3
       # max-diff-chars: 30000

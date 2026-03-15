@@ -44,7 +44,7 @@ members:
 passing_threshold: 6.0
 
 # GitHub Models identifier — any model from https://github.com/marketplace/models
-# Examples: openai/gpt-4o, anthropic/claude-sonnet-4.6, openai/gpt-5.4
+# Examples: openai/gpt-4o, openai/gpt-4.1, openai/gpt-5, xai/grok-3
 model: openai/gpt-4o
 ---
 
