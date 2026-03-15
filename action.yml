@@ -140,7 +140,7 @@ runs:
         done
 
     # ── Elrond ───────────────────────────────────────────────────────────
-    - uses: actions/ai-inference@b81b2afb8390ee6839b494a404766bef6493c7d9 # v1
+    - uses: actions/ai-inference@e09e65981758de8b2fdab13c2bfb7c7d5493b0b6 # v2
       if: ${{ steps.members.outputs.elrond == 'true' }}
       id: elrond
       with:
@@ -162,7 +162,7 @@ runs:
         fi
 
     # ── Gimli ────────────────────────────────────────────────────────────
-    - uses: actions/ai-inference@b81b2afb8390ee6839b494a404766bef6493c7d9 # v1
+    - uses: actions/ai-inference@e09e65981758de8b2fdab13c2bfb7c7d5493b0b6 # v2
       if: ${{ steps.members.outputs.gimli == 'true' }}
       id: gimli
       with:
@@ -184,7 +184,7 @@ runs:
         fi
 
     # ── Aragorn ──────────────────────────────────────────────────────────
-    - uses: actions/ai-inference@b81b2afb8390ee6839b494a404766bef6493c7d9 # v1
+    - uses: actions/ai-inference@e09e65981758de8b2fdab13c2bfb7c7d5493b0b6 # v2
       if: ${{ steps.members.outputs.aragorn == 'true' }}
       id: aragorn
       with:
@@ -206,7 +206,7 @@ runs:
         fi
 
     # ── Legolas ──────────────────────────────────────────────────────────
-    - uses: actions/ai-inference@b81b2afb8390ee6839b494a404766bef6493c7d9 # v1
+    - uses: actions/ai-inference@e09e65981758de8b2fdab13c2bfb7c7d5493b0b6 # v2
       if: ${{ steps.members.outputs.legolas == 'true' }}
       id: legolas
       with:
@@ -228,7 +228,7 @@ runs:
         fi
 
     # ── Bilbo ────────────────────────────────────────────────────────────
-    - uses: actions/ai-inference@b81b2afb8390ee6839b494a404766bef6493c7d9 # v1
+    - uses: actions/ai-inference@e09e65981758de8b2fdab13c2bfb7c7d5493b0b6 # v2
       if: ${{ steps.members.outputs.bilbo == 'true' }}
       id: bilbo
       with:
@@ -275,7 +275,7 @@ runs:
           printf 'Respond with valid JSON only — no markdown fences, no commentary.\n'
         } > "$RUNNER_TEMP/gandalf-prompt.txt"
 
-    - uses: actions/ai-inference@b81b2afb8390ee6839b494a404766bef6493c7d9 # v1
+    - uses: actions/ai-inference@e09e65981758de8b2fdab13c2bfb7c7d5493b0b6 # v2
       if: ${{ steps.config.outputs.gandalf == 'true' }}
       id: gandalf
       with:

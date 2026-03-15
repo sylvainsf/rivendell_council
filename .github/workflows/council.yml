@@ -161,7 +161,7 @@ jobs:
             cat diff.patch
           } > prompt.txt
 
-      - uses: actions/ai-inference@b81b2afb8390ee6839b494a404766bef6493c7d9 # v1
+      - uses: actions/ai-inference@e09e65981758de8b2fdab13c2bfb7c7d5493b0b6 # v2
         id: review
         with:
           model: ${{ needs.prepare.outputs.model }}
@@ -290,7 +290,7 @@ jobs:
       - name: Gandalf verdict (AI)
         id: verdict
         if: ${{ needs.prepare.outputs.gandalf == 'true' }}
-        uses: actions/ai-inference@b81b2afb8390ee6839b494a404766bef6493c7d9 # v1
+        uses: actions/ai-inference@e09e65981758de8b2fdab13c2bfb7c7d5493b0b6 # v2
         with:
           model: ${{ needs.prepare.outputs.model }}
           prompt-file: gandalf-prompt.txt
