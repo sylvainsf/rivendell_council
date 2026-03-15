@@ -1,0 +1,64 @@
+name: 'Rivendell Council'
+description: >
+  Convene the Rivendell Council — a fellowship of AI reviewers (Elrond, Gimli, Aragorn, Legolas)
+  led by Gandalf the arbiter — to review a pull request and deliver a PASS/FAIL verdict.
+
+branding:
+  icon: 'eye'
+  color: 'purple'
+
+inputs:
+  openai-api-key:
+    description: 'OpenAI API key used to power the council members.'
+    required: true
+  github-token:
+    description: 'GitHub token used to read the PR diff and post the council review comment.'
+    required: true
+    default: ${{ github.token }}
+  council-config:
+    description: >
+      Path to the council.md configuration file. Defaults to the council.md bundled with this
+      action (at the root of the rivendell_council submodule).
+    required: false
+    default: ''
+  model:
+    description: >
+      OpenAI model override. If set, takes precedence over the model specified in council.md.
+    required: false
+    default: ''
+  max-diff-chars:
+    description: 'Maximum number of characters from the PR diff to send to each reviewer.'
+    required: false
+    default: '30000'
+
+outputs:
+  decision:
+    description: "Gandalf's final verdict: PASS or FAIL."
+    value: ${{ steps.council.outputs.decision }}
+  summary:
+    description: "A prose summary of the council's findings."
+    value: ${{ steps.council.outputs.summary }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install Python dependencies
+      shell: bash
+      run: pip install --quiet requests PyYAML
+
+    - name: Convene the Council
+      id: council
+      shell: bash
+      env:
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        COUNCIL_CONFIG: ${{ inputs.council-config }}
+        MODEL_OVERRIDE: ${{ inputs.model }}
+        MAX_DIFF_CHARS: ${{ inputs.max-diff-chars }}
+        ACTION_PATH: ${{ github.action_path }}
+      run: python "${{ github.action_path }}/scripts/review.py"
