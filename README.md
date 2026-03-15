@@ -65,20 +65,25 @@ or add custom reviewers — via a `council.md` file. See [Configuration](#config
 
 ### Model options
 
-Any model from the [GitHub Models marketplace](https://github.com/marketplace/models) can be used:
+Any model from the [GitHub Models marketplace](https://github.com/marketplace/models) can be used.
+Some models require a paid Copilot plan — see the **Tier** column below.
 
-| Model | Identifier |
-|-------|-----------|
-| GPT-4o | `openai/gpt-4o` (default) |
-| GPT-4o mini | `openai/gpt-4o-mini` (faster, lower cost) |
-| GPT-4.1 | `openai/gpt-4.1` |
-| GPT-4.1 mini | `openai/gpt-4.1-mini` |
-| GPT-5 | `openai/gpt-5` |
-| GPT-5 mini | `openai/gpt-5-mini` |
-| o3 | `openai/o3` |
-| o4-mini | `openai/o4-mini` |
-| Grok 3 | `xai/grok-3` |
-| DeepSeek-R1 | `deepseek/deepseek-r1` |
+| Model | Identifier | Tier |
+|-------|-----------|------|
+| GPT-4o | `openai/gpt-4o` (default) | Free |
+| GPT-4o mini | `openai/gpt-4o-mini` | Free |
+| GPT-4.1 | `openai/gpt-4.1` | Free |
+| GPT-4.1 mini | `openai/gpt-4.1-mini` | Free |
+| GPT-4.1 nano | `openai/gpt-4.1-nano` | Free |
+| o4-mini | `openai/o4-mini` | Copilot Pro+ |
+| o3 | `openai/o3` | Copilot Pro+ |
+| GPT-5 | `openai/gpt-5` | Copilot Pro+ |
+| GPT-5 mini | `openai/gpt-5-mini` | Copilot Pro+ |
+| DeepSeek-R1 | `deepseek/deepseek-r1` | Copilot Pro+ |
+| Grok 3 | `xai/grok-3` | Copilot Pro+ |
+
+> **Note:** Models marked **Copilot Pro+** return a `403` error on the free tier.
+> If you see `403 status code (no body)`, switch to a free-tier model like `openai/gpt-4.1`.
 
 ---
 

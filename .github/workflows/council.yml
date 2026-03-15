@@ -166,6 +166,18 @@ jobs:
         with:
           model: ${{ needs.prepare.outputs.model }}
           prompt-file: prompt.txt
+        continue-on-error: true
+
+      - name: Check inference result
+        if: ${{ steps.review.outcome == 'failure' }}
+        env:
+          MODEL: ${{ needs.prepare.outputs.model }}
+        run: |
+          echo "::error::AI inference failed for model '$MODEL'. "
+          echo "::error::If you see a 403 error, the model may require a paid Copilot plan. "
+          echo "::error::Try a free-tier model such as openai/gpt-4o or openai/gpt-4.1."
+          echo "::error::See https://github.com/marketplace/models for model availability."
+          exit 1
 
       - name: Save review
         env:
@@ -282,6 +294,17 @@ jobs:
         with:
           model: ${{ needs.prepare.outputs.model }}
           prompt-file: gandalf-prompt.txt
+        continue-on-error: true
+
+      - name: Check Gandalf inference result
+        if: ${{ needs.prepare.outputs.gandalf == 'true' && steps.verdict.outcome == 'failure' }}
+        env:
+          MODEL: ${{ needs.prepare.outputs.model }}
+        run: |
+          echo "::error::AI inference failed for Gandalf with model '$MODEL'. "
+          echo "::error::If you see a 403 error, the model may require a paid Copilot plan. "
+          echo "::error::Try a free-tier model such as openai/gpt-4o or openai/gpt-4.1."
+          exit 1
 
       - name: Save AI verdict
         if: ${{ needs.prepare.outputs.gandalf == 'true' }}
