@@ -1,0 +1,29 @@
+name: Rivendell Council Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  council:
+    name: Convene the Council
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write   # post the review comment
+      contents: read         # read the repository
+
+    steps:
+      - name: Checkout code (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive   # required to initialise rivendell_council
+
+      - name: Convene Rivendell Council
+        uses: ./.github/rivendell_council
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          github-token:   ${{ secrets.GITHUB_TOKEN }}
+          # Optional overrides:
+          # council-config: .github/council.md   # custom config path
+          # model: gpt-4o                         # OpenAI model
+          # max-diff-chars: '30000'               # truncation limit
