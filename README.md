@@ -248,6 +248,25 @@ git commit -m "Pin Rivendell Council to v1.0.0"
 
 ---
 
+## Contributing
+
+Rivendell Council is built on our collective wisdom — the prompts, the roles, and the review
+philosophy are all shaped by the community. If you have ideas to improve a council member's prompt,
+suggestions for better review criteria, or want to propose a new member to join the fellowship,
+contributions are very welcome.
+
+- **Improve existing prompts** — Open a PR with changes to any file in `council/`. Better
+  phrasing, sharper focus, or fewer false positives are all valuable improvements.
+- **Add new council members** — Have a domain that deserves its own reviewer? Create a new
+  prompt file in `council/` and open a PR. Include a brief explanation of the role and what
+  kind of feedback the new member should provide.
+- **General suggestions** — Open an issue to discuss ideas, share feedback on review quality,
+  or propose changes to how the council works.
+
+All perspectives make the council stronger. Don't hesitate to contribute.
+
+---
+
 ## License
 
 [MIT](LICENSE)
